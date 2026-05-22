@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    match /users/{userId} {
+      allow create: if isOwner(userId) && request.resource.data.role == "customer";
+      allow read, update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /cart/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /wishlist/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /orders/{orderId} {
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow update: if isAdmin()
+        || (signedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(["paymentStatus"]));
+      allow delete: if isAdmin();
+    }
+
+    match /coupons/{couponId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
